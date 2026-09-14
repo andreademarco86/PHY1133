@@ -1,0 +1,338 @@
+%! Author = andrea
+%! Date = 11/11/2025
+
+% Preamble
+\documentclass[11pt]{article}
+
+% Packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\setlist[itemize]{noitemsep, topsep=2pt}
+\setlist[enumerate]{noitemsep, topsep=2pt}
+\geometry{margin=2.5cm}
+
+% Document
+\begin{document}
+
+\begin{center}
+    {\large PHY1133: Python for Physicists}\\[0.5em]
+    {\large Academic Year: 2025--2026}\\[0.5em]
+    {\Large Planning a Flight Route over the Mediterranean}\\[0.5em]
+    {\large Dr Andrea De Marco}\\[0.5em]
+\end{center}
+\noindent\textbf{Submission Deadline:} [31 January 2026]\\[0.5em]
+
+\section{Scenario}
+You are helping a small cargo aircraft plan a route to deliver equipment to several airports around the Mediterranean. The pilot wants a route that
+\begin{itemize}
+    \item starts at a home base (Malta International Airport),
+    \item visits every other airport exactly once,
+    \item returns to Malta, and
+    \item has the shortest possible distance along Earth's surface.
+\end{itemize}
+
+This is an instance of the Traveling Salesperson Problem (TSP) on a sphere. In this assignment you will:
+\begin{itemize}
+    \item work with real-looking latitude/longitude coordinates,
+    \item implement the Haversine formula for distances on Earth,
+    \item implement two TSP algorithms:
+    \begin{enumerate}
+        \item brute force search (exact, small problems),
+        \item nearest neighbour heuristic (fast, approximate),
+    \end{enumerate}
+    \item compute and compare route lengths, and
+    \item visualise the routes.
+\end{itemize}
+
+You should use Python tools you already know: variables, conditions, loops, lists, functions, basic NumPy, and simple plotting.
+
+\section{Data: Airports Around the Mediterranean}
+You are given 10 airports with approximate latitude and longitude in degrees:
+
+\begin{verbatim}
+# name, latitude (deg), longitude (deg)
+airports = [
+    ("Malta Int. (MLA)",     35.857,  14.477),
+    ("Catania (CTA)",        37.469,  15.066),
+    ("Palermo (PMO)",        38.176,  13.103),
+    ("Rome Fiumicino (FCO)", 41.800,  12.238),
+    ("Athens (ATH)",         37.936,  23.947),
+    ("Naples (NAP)",         40.886,  14.290),
+    ("Tunis (TUN)",          36.851,  10.228),
+    ("Algiers (ALG)",        36.691,   3.215),
+    ("Barcelona (BCN)",      41.297,   2.078),
+    ("Nice (NCE)",           43.665,   7.215),
+]
+\end{verbatim}
+
+Treat index \texttt{0} (\texttt{"Malta Int. (MLA)"}) as the fixed starting and ending airport. Tours will start at index 0, visit all indices 1--9 exactly once, then return to 0.
+
+\section{Coordinates, Distances, and Physics}
+\subsection{Latitude and Longitude}
+\begin{itemize}
+    \item Latitude (lat): north--south angle from the equator.
+    \begin{itemize}
+        \item 0$^\circ$ at the equator,
+        \item +90$^\circ$ at the North Pole,
+        \item \textminus 90$^\circ$ at the South Pole.
+    \end{itemize}
+    \item Longitude (lon): east--west angle from Greenwich.
+    \begin{itemize}
+        \item 0$^\circ$ at Greenwich,
+        \item positive eastwards, negative westwards.
+    \end{itemize}
+\end{itemize}
+
+Python's trigonometric functions (\texttt{math.sin}, \texttt{math.cos}, etc.) use radians, not degrees. The conversion from degrees to radians is
+\[
+\text{radians} = \text{degrees} \times \frac{\pi}{180}.
+\]
+
+%In Python this can be implemented as
+%\begin{verbatim}
+%import math
+%
+%def deg2rad(deg):
+%    return deg * math.pi / 180.0
+%\end{verbatim}
+
+\subsection{Flat Euclidean Distance}
+If we pretend the Earth is flat over this small region and use latitude and longitude as $y$ and $x$, we can define a local planar distance in \emph{kilometres} by converting degrees to km first. Let $P=(\text{lat}_1,\text{lon}_1)$ and $Q=(\text{lat}_2,\text{lon}_2)$ in degrees and define
+\[
+  \Delta \text{lat} = \text{lat}_2 - \text{lat}_1,\qquad
+  \Delta \text{lon} = \text{lon}_2 - \text{lon}_1.
+\]
+Using Earth's radius $R=6371\,$km, set
+\[
+  k_{\text{lat}} = \frac{\pi R}{180},\qquad
+  k_{\text{lon}} = k_{\text{lat}} \cos\!\bigl(\bar{\varphi}\bigr),\quad
+  \bar{\varphi} = \frac{\text{lat}_1+\text{lat}_2}{2}\cdot\frac{\pi}{180} \ (\text{radians}).
+\]
+The local Euclidean distance in km is then
+\[
+  d_{\text{euclid}} = \sqrt{\bigl(k_{\text{lon}}\Delta \text{lon}\bigr)^2 + \bigl(k_{\text{lat}}\Delta \text{lat}\bigr)^2}\,.
+\]
+This ``flat'' approximation is not physically exact over large areas, but on this dataset it is acceptable for comparison with Haversine.
+
+\subsection{Haversine Distance (Great-Circle Distance)}
+To approximate the physical distance along Earth's surface, we use the Haversine formula.
+
+For two points with coordinates $(\text{lat}_1, \text{lon}_1)$ and $(\text{lat}_2, \text{lon}_2)$ in degrees, we define
+\begin{align*}
+\Delta \text{lat} &= \text{lat}_2 - \text{lat}_1,\\
+\Delta \text{lon} &= \text{lon}_2 - \text{lon}_1.
+\end{align*}
+
+After converting all angles to radians, the Haversine expression is
+\[
+ a = \sin^2\left(\frac{\Delta \text{lat}}{2}\right)
+     + \cos(\text{lat}_1)\cos(\text{lat}_2)\sin^2\left(\frac{\Delta \text{lon}}{2}\right).
+\]
+
+The central angle $c$ is
+\[
+ c = 2 \cdot \arctan2\bigl(\sqrt{a}, \sqrt{1 - a}\bigr),
+\]
+
+and the Haversine distance is
+\[
+ d_{\text{haversine}} = R \cdot c,
+\]
+where $R$ is Earth's radius in km (use $R = 6371$~km). You must implement this function.
+
+%In Python:
+%\begin{verbatim}
+%def haversine_distance(p, q, R=6371.0):
+%    """p, q are (lat_deg, lon_deg); returns distance in km."""
+%    lat1_deg, lon1_deg = p
+%    lat2_deg, lon2_deg = q
+%
+%    lat1 = deg2rad(lat1_deg)
+%    lon1 = deg2rad(lon1_deg)
+%    lat2 = deg2rad(lat2_deg)
+%    lon2 = deg2rad(lon2_deg)
+%
+%    dlat = lat2 - lat1
+%    dlon = lon2 - lon1
+%
+%    a = (math.sin(dlat/2)**2
+%         + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2)
+%    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+%
+%    return R * c
+%\end{verbatim}
+
+\section{The Traveling Salesperson Problem (TSP)}
+We have $N = 10$ airports, indexed from 0 to 9. A \emph{tour} is a list of indices
+\[
+ [0, i_1, i_2, \dots, i_9, 0]
+\]
+where 0 appears at the beginning and the end, and each of the other indices 1--9 appears exactly once. The length of a tour is the sum of distances between consecutive airports along the route, using the chosen distance metric (Haversine distance in km). The goal is to find a tour with the smallest possible total Haversine distance.
+
+\section{Algorithms to Implement}
+You must implement both of the following algorithms:
+\begin{enumerate}
+    \item brute force search (exact),
+    \item nearest neighbour heuristic (constructive).
+\end{enumerate}
+
+\subsection{Brute Force Search}
+\textbf{Strategy:}
+\begin{itemize}
+    \item Fix starting index 0 (Malta).
+    \item Generate all permutations of the remaining indices $[1,2,\dots,9]$.
+    \item For each permutation, build the route $[0] + \text{perm} + [0]$ and compute its length.
+    \item Keep the shortest route and its length.
+\end{itemize}
+
+Pseudocode outline:
+\begin{enumerate}
+    \item $\text{start} = 0$.
+    \item $\text{others} = [1,2,\dots,9]$.
+    \item Set $\text{best\_route} = \text{None}$ and $\text{best\_length} = +\infty$.
+    \item For each permutation \texttt{perm} of \texttt{others}:
+    \begin{enumerate}
+        \item Build \texttt{route = [start] + list(perm) + [start]}.
+        \item Compute $L = \text{route\_length(route, airports, haversine\_distance)}$.
+        \item If $L < \text{best\_length}$, update the best route and length.
+    \end{enumerate}
+    \item Return \texttt{best\_route} and \texttt{best\_length}.
+\end{enumerate}
+
+You may use \texttt{itertools.permutations} to generate permutations.
+
+\subsection{Nearest Neighbour Heuristic}
+\textbf{Strategy:}
+\begin{itemize}
+    \item Start at Malta.
+    \item At each step, move to the closest unvisited airport.
+    \item After visiting all airports, return to Malta.
+\end{itemize}
+
+Pseudocode:
+\begin{enumerate}
+    \item $\text{start} = 0$.
+    \item $\text{current} = \text{start}$.
+    \item $\text{route} = [\text{current}]$.
+    \item $\text{unvisited} = \{1,2,\dots,9\}$.
+    \item While \texttt{unvisited} is not empty:
+    \begin{enumerate}
+        \item For each candidate in \texttt{unvisited}, compute the distance from \texttt{current}.
+        \item Choose the candidate with the smallest distance.
+        \item Append it to \texttt{route}, remove it from \texttt{unvisited}, and set \texttt{current = candidate}.
+    \end{enumerate}
+    \item Append \texttt{start} to \texttt{route} to close the loop.
+    \item Return \texttt{route}.
+\end{enumerate}
+
+You should then compute the length of this route using Haversine distance.
+
+\section{Programming Tasks}
+Submit a single \texttt{.py} file or a Jupyter notebook.
+
+\subsection*{Task 1: Data and Helpers}
+\begin{enumerate}
+    \item Store the \texttt{airports} list as given.
+    \item Implement a helper to get coordinates by index.
+\end{enumerate}
+
+\subsection*{Task 2: Distance Functions}
+\begin{enumerate}
+    \item Implement \texttt{deg2rad(deg)}.
+    \item Implement
+    \begin{verbatim}
+    def euclidean_distance(p, q, R=6371.0):
+        ...
+    \end{verbatim}
+    where \texttt{p} and \texttt{q} are \texttt{(lat\_deg, lon\_deg)}; return the local flat-plane distance \emph{in kilometres} using the small-area conversion
+    $k_{\text{lat}}=\pi R/180$ and $k_{\text{lon}}=k_{\text{lat}}\cos(\bar{\varphi})$ with $\bar{\varphi}$ the mean latitude in radians (see the ``Flat Euclidean Distance'' subsection).
+    \item Implement
+    \begin{verbatim}
+    def haversine_distance(p, q, R=6371.0):
+        ...
+    \end{verbatim}
+    where \texttt{p} and \texttt{q} are \texttt{(lat\_deg, lon\_deg)}.
+    \item Implement a route length function
+    \begin{verbatim}
+    def route_length(route, airports, distance_fn=haversine_distance):
+        """route is a list like [0, 3, 5, ..., 0]; returns total distance in km."""
+    \end{verbatim}
+    looping over consecutive index pairs in \texttt{route}. Use the \texttt{distance\_fn} argument so you can pass either \texttt{haversine\_distance} or \texttt{euclidean\_distance}.
+    \item Optional: compare route lengths using both metrics (Euclidean vs Haversine) and comment briefly.
+\end{enumerate}
+
+\subsection*{Task 3: TSP Algorithms}
+\begin{enumerate}
+    \item Implement brute force:
+    \begin{verbatim}
+    def brute_force_route(airports, start_index=0):
+        """Returns (best_route, best_length) using exhaustive search."""
+    \end{verbatim}
+    \item Implement nearest neighbour:
+    \begin{verbatim}
+    def nearest_neighbour_route(airports, start_index=0):
+        """Returns a route using the nearest neighbour heuristic."""
+    \end{verbatim}
+    \item Run both algorithms:
+    \begin{itemize}
+        \item brute force to get an exact best route \texttt{(route\_exact, L\_exact)},
+        \item nearest neighbour to get a heuristic route \texttt{(route\_nn, L\_nn)}.
+    \end{itemize}
+    Print and compare both route lengths.
+\end{enumerate}
+
+\section{Visualisation}
+Using \texttt{matplotlib}:
+\begin{enumerate}
+    \item Plot all airports as points with
+    \begin{itemize}
+        \item longitude on the $x$-axis,
+        \item latitude on the $y$-axis,
+        \item labels for each point with its name.
+    \end{itemize}
+
+\item Plot two routes:
+\begin{itemize}
+    \item the exact route (brute force),
+    \item the nearest neighbour route.
+\end{itemize}
+    You may either use different line styles/colours on the same figure or separate figures.
+\end{enumerate}
+
+\section{Short Written Answers}
+Answer briefly (a few sentences each) in your write-up:
+\begin{enumerate}
+    \item In your own words, what is the Traveling Salesperson Problem?
+    \item Why is the Haversine formula more appropriate than a simple flat Euclidean distance for these coordinates?
+    \item Compare the two algorithms (brute force and nearest neighbour) in terms of
+    \begin{itemize}
+        \item quality of the solution on this dataset (which route is shortest), and
+        \item what you expect to happen as the number of airports becomes very large.
+    \end{itemize}
+    \item If you experimented with another distance function, did the ``best'' route change?
+\end{enumerate}
+
+\section{Marking Scheme and Deliverables}
+The assignment also includes a write-up, which should be about 3 to 4 pages long, including figures and plots, but excluding any code listing. The write-up should include:
+\begin{itemize}
+    \item A discussion of the problem and how you tackled it.
+    \item An explanation of how the various aspects of your code works.
+    \item Plots of the various route solutions.
+\end{itemize}
+Submit your source code, as a Python file or as a Colab Notebook along with your report in a ZIP file on the VLE.
+
+The marking breakdown is as follows:
+\begin{itemize}
+    \item Data representation and appropriate functions with separation of concerns: 15\%.
+    \item Correct distance function implementation and route length: 20\%.
+    \item Brute force implementation and result: 15\%.
+    \item Nearest neighbour implementation and result: 15\%.
+    \item Visualisation and clarity of plots: 15\%.
+    \item Written report with answers and interpretation: 20\%.
+\end{itemize}
+
+\end{document}
