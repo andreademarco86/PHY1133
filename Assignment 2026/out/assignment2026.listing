@@ -1,0 +1,2 @@
+def range_vs_angle(v0, k, dt=0.001):
+    """Return NumPy arrays of angles (1 to 89 degrees) and their ranges."""
